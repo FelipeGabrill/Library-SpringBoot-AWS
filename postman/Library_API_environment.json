@@ -1,0 +1,92 @@
+{
+  "id": "biblioteca-env-002",
+  "name": "Biblioteca API - Local",
+  "values": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "clientId",
+      "value": "myclientid",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "clientSecret",
+      "value": "myclientsecret",
+      "type": "secret",
+      "enabled": true
+    },
+    {
+      "key": "email",
+      "value": "felipe@biblioteca.com",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "password",
+      "value": "123456",
+      "type": "secret",
+      "enabled": true
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "secret",
+      "enabled": true
+    },
+    {
+      "key": "userId",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "categoryId",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "bookId",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "loanId",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "reservationId",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "recoverToken",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "searchEmail",
+      "value": "felipe",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "searchQuery",
+      "value": "clean",
+      "type": "default",
+      "enabled": true
+    }
+  ],
+  "color": null,
+  "_postman_variable_scope": "environment"
+}
