@@ -1,0 +1,783 @@
+{
+  "info": {
+    "_postman_id": "biblioteca-api-001",
+    "name": "Biblioteca API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    pm.environment.set('token', json.access_token);",
+                  "    console.log('Token saved:', json.access_token);",
+                  "} else {",
+                  "    console.error('Login failed:', pm.response.text());",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{clientId}}", "type": "string" },
+                { "key": "password", "value": "{{clientSecret}}", "type": "string" }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "grant_type", "value": "password", "type": "text" },
+                { "key": "username", "value": "{{email}}", "type": "text" },
+                { "key": "password", "value": "{{password}}", "type": "text" }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/oauth2/token",
+              "host": ["{{baseUrl}}"],
+              "path": ["oauth2", "token"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Recover Token",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"email\": \"{{email}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/recover-token",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "recover-token"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "New Password",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"token\": \"{{recoverToken}}\",\n    \"password\": \"newpassword123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/new-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "new-password"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Validate Token",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/validate-token?token={{recoverToken}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "validate-token"],
+              "query": [{ "key": "token", "value": "{{recoverToken}}" }]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Get Me",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "me"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Find All Users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users?page=0&size=10&sort=name,asc",
+              "host": ["{{baseUrl}}"],
+              "path": ["users"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "10" },
+                { "key": "sort", "value": "name,asc" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Find User By Id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Find User By Email",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/email/{{searchEmail}}?page=0&size=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "email", "{{searchEmail}}"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "10" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Insert User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    pm.environment.set('userId', json.id);",
+                  "    console.log('User created with id:', json.id);",
+                  "} else {",
+                  "    console.error('Insert user failed:', pm.response.text());",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "name", "value": "New User", "type": "text" },
+                { "key": "email", "value": "newuser@biblioteca.com", "type": "text" },
+                { "key": "password", "value": "password123", "type": "text" },
+                { "key": "roles[0].id", "value": "2", "type": "text" },
+                { "key": "profilePicture", "type": "file", "src": "", "disabled": true }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["users"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update User",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "name", "value": "Updated Name", "type": "text" },
+                { "key": "email", "value": "newuser@biblioteca.com", "type": "text" },
+                { "key": "roles[0].id", "value": "2", "type": "text" },
+                { "key": "profilePicture", "type": "file", "src": "", "disabled": true }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete User",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Categories",
+      "item": [
+        {
+          "name": "Find All Categories",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/categories?page=0&size=10&sort=name,asc",
+              "host": ["{{baseUrl}}"],
+              "path": ["categories"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "10" },
+                { "key": "sort", "value": "name,asc" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Find Category By Id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/categories/{{categoryId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["categories", "{{categoryId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Insert Category",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    pm.environment.set('categoryId', json.id);",
+                  "    console.log('Category created with id:', json.id);",
+                  "} else {",
+                  "    console.error('Insert category failed:', pm.response.text());",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"name\": \"Technology\",\n    \"description\": \"Programming and software books\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["categories"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Category",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"name\": \"Technology Updated\",\n    \"description\": \"Updated description\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/categories/{{categoryId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["categories", "{{categoryId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Category",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/categories/{{categoryId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["categories", "{{categoryId}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Books",
+      "item": [
+        {
+          "name": "Find All Books",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books?page=0&size=10&sort=title,asc",
+              "host": ["{{baseUrl}}"],
+              "path": ["books"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "10" },
+                { "key": "sort", "value": "title,asc" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Find Book By Id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books/{{bookId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["books", "{{bookId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Search Books",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books/search?query={{searchQuery}}&page=0&size=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["books", "search"],
+              "query": [
+                { "key": "query", "value": "{{searchQuery}}" },
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "10" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Find Available Books",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books/available?page=0&size=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["books", "available"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "10" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Find Books By Category",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books/category/{{categoryId}}?page=0&size=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["books", "category", "{{categoryId}}"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "10" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Insert Book",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    pm.environment.set('bookId', json.id);",
+                  "    console.log('Book created with id:', json.id);",
+                  "} else {",
+                  "    console.error('Insert book failed:', pm.response.text());",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "title", "value": "Clean Code", "type": "text" },
+                { "key": "author", "value": "Robert C. Martin", "type": "text" },
+                { "key": "publisher", "value": "Prentice Hall", "type": "text" },
+                { "key": "publicationYear", "value": "2008", "type": "text" },
+                { "key": "isbn", "value": "9780132350884", "type": "text" },
+                { "key": "totalCopies", "value": "3", "type": "text" },
+                { "key": "categoryId", "value": "{{categoryId}}", "type": "text" },
+                { "key": "media", "type": "file", "src": "", "disabled": true }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/books",
+              "host": ["{{baseUrl}}"],
+              "path": ["books"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Book",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "title", "value": "Clean Code Updated", "type": "text" },
+                { "key": "author", "value": "Robert C. Martin", "type": "text" },
+                { "key": "publisher", "value": "Prentice Hall", "type": "text" },
+                { "key": "publicationYear", "value": "2008", "type": "text" },
+                { "key": "isbn", "value": "9780132350884", "type": "text" },
+                { "key": "totalCopies", "value": "5", "type": "text" },
+                { "key": "categoryId", "value": "{{categoryId}}", "type": "text" },
+                { "key": "media", "type": "file", "src": "", "disabled": true }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/books/{{bookId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["books", "{{bookId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Book",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books/{{bookId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["books", "{{bookId}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Loans",
+      "item": [
+        {
+          "name": "Find All Loans",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/loans?page=0&size=10&sort=borrowedAt,desc",
+              "host": ["{{baseUrl}}"],
+              "path": ["loans"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "10" },
+                { "key": "sort", "value": "borrowedAt,desc" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Find Loan By Id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/loans/{{loanId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["loans", "{{loanId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Find Loans By User",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/loans/user/{{userId}}?page=0&size=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["loans", "user", "{{userId}}"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "10" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Find Loans By Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/loans/status/ACTIVE?page=0&size=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["loans", "status", "ACTIVE"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "10" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Find Overdue Loans",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/loans/overdue?page=0&size=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["loans", "overdue"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "10" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Count Loans By Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/loans/count/status/ACTIVE",
+              "host": ["{{baseUrl}}"],
+              "path": ["loans", "count", "status", "ACTIVE"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Register Loan",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    pm.environment.set('loanId', json.id);",
+                  "    console.log('Loan registered with id:', json.id);",
+                  "} else {",
+                  "    console.error('Register loan failed:', pm.response.text());",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/loans/book/{{bookId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["loans", "book", "{{bookId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Return Book",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/loans/{{loanId}}/return",
+              "host": ["{{baseUrl}}"],
+              "path": ["loans", "{{loanId}}", "return"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Process Overdue Loans",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/loans/process-overdue",
+              "host": ["{{baseUrl}}"],
+              "path": ["loans", "process-overdue"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Reservations",
+      "item": [
+        {
+          "name": "Find Reservation By Id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reservations/{{reservationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["reservations", "{{reservationId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Find Reservations By User",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reservations/user/{{userId}}?page=0&size=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["reservations", "user", "{{userId}}"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "10" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Find Reservations By Book",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reservations/book/{{bookId}}?page=0&size=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["reservations", "book", "{{bookId}}"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "10" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Reservation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    pm.environment.set('reservationId', json.id);",
+                  "    console.log('Reservation created with id:', json.id);",
+                  "} else {",
+                  "    console.error('Create reservation failed:', pm.response.text());",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reservations/book/{{bookId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["reservations", "book", "{{bookId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel Reservation",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reservations/{{reservationId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["reservations", "{{reservationId}}", "cancel"]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
