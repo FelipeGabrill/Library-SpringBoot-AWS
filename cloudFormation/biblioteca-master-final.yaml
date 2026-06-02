@@ -1,0 +1,1007 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: |
+  Biblioteca Digital - Infraestrutura Completa
+  Recursos: VPC, S3, RDS, Secrets Manager, SNS, SQS, Lambdas de email, Lambda batch de multas, Elastic Beanstalk
+  Autor: Pedro Vidigal, Felipe Gabriel, Clovis Dantas, Ewerton Santana, Gustavo Souza
+
+# ═══════════════════════════════════════════════════════════════
+# PARAMETROS
+# ═══════════════════════════════════════════════════════════════
+Parameters:
+
+  Environment:
+    Type: String
+    Default: test
+    AllowedValues: [prod, dev, test]
+    Description: Label para nomear os recursos (ex biblioteca-vpc-test)
+
+  DeployBucket:
+    Type: String
+    Description: Bucket S3 onde os ZIPs das Lambdas e o JAR da aplicacao estao
+
+  # ── Email ────────────────────────────────────────────────────
+  SesFromEmail:
+    Type: String
+    Description: Email verificado no SES para envio de notificacoes
+
+  RecoverUri:
+    Type: String
+    Default: http://localhost:3000/reset-password?token=
+    Description: URL base do frontend para recuperacao de senha
+
+  # ── Aplicacao ────────────────────────────────────────────────
+  AppS3Key:
+    Type: String
+    Default: app/library-0.0.1-SNAPSHOT.jar
+    Description: Path do JAR da aplicacao no bucket de deploy
+
+  AWSAccessKey:
+    Type: String
+    NoEcho: true
+    Description: AWS Access Key para a aplicacao acessar SNS e S3
+
+  AWSSecretKey:
+    Type: String
+    NoEcho: true
+    Description: AWS Secret Key para a aplicacao acessar SNS e S3
+
+  JwtDuration:
+    Type: String
+    Default: '86400'
+    Description: Duracao do token JWT em segundos
+
+  TokenMinutes:
+    Type: String
+    Default: '30'
+    Description: Duracao do token de recuperacao de senha em minutos
+
+  CorsOrigins:
+    Type: String
+    Default: '*'
+    Description: Origens permitidas para CORS
+
+  FinePerDay:
+    Type: Number
+    Default: 1
+    Description: Valor da multa por dia de atraso em reais
+
+  # ── Banco de dados ────────────────────────────────────────────
+  DBName:
+    Type: String
+    Default: biblioteca
+    Description: Nome do banco de dados
+
+  DBUsername:
+    Type: String
+    Default: admin
+    Description: Usuario do banco de dados
+
+  DBPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    Description: Senha do banco (minimo 8 caracteres, sem / @ aspas ou espacos)
+
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.micro
+    AllowedValues: [db.t3.micro, db.t3.small, db.t3.medium]
+    Description: Tipo da instancia RDS
+
+Resources:
+
+# ═══════════════════════════════════════════════════════════════
+# SECAO 1 — REDE (VPC)
+# ═══════════════════════════════════════════════════════════════
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub biblioteca-vpc-${Environment}
+        - Key: Project
+          Value: biblioteca
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub biblioteca-igw-${Environment}
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  SubnetPublica:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub biblioteca-subnet-public-${Environment}
+
+  SubnetPublica2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub biblioteca-subnet-public-2-${Environment}
+
+  SubnetPrivada1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.10.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub biblioteca-subnet-private-1-${Environment}
+
+  SubnetPrivada2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.20.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub biblioteca-subnet-private-2-${Environment}
+
+  ElasticIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt ElasticIP.AllocationId
+      SubnetId: !Ref SubnetPublica
+      Tags:
+        - Key: Name
+          Value: !Sub biblioteca-nat-${Environment}
+
+  RouteTablePublica:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub biblioteca-rt-public-${Environment}
+
+  RoutePublica:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref RouteTablePublica
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  SubnetPublicaRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetPublica
+      RouteTableId: !Ref RouteTablePublica
+
+  SubnetPublica2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetPublica2
+      RouteTableId: !Ref RouteTablePublica
+
+  RouteTablePrivada:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub biblioteca-rt-private-${Environment}
+
+  RoutePrivada:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTablePrivada
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  SubnetPrivada1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetPrivada1
+      RouteTableId: !Ref RouteTablePrivada
+
+  SubnetPrivada2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetPrivada2
+      RouteTableId: !Ref RouteTablePrivada
+
+# ═══════════════════════════════════════════════════════════════
+# SECAO 2 — ARMAZENAMENTO (S3)
+# ═══════════════════════════════════════════════════════════════
+
+  BucketImagens:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub biblioteca-imagens-${AWS::AccountId}-${Environment}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET]
+            AllowedOrigins: ['*']
+            MaxAge: 3600
+      Tags:
+        - Key: Project
+          Value: biblioteca
+
+  BucketImagensPolicy:
+    Type: AWS::S3::BucketPolicy
+    DependsOn: BucketImagens
+    Properties:
+      Bucket: !Ref BucketImagens
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub arn:aws:s3:::${BucketImagens}/*
+
+# ═══════════════════════════════════════════════════════════════
+# SECAO 3 — BANCO DE DADOS (RDS + Secrets Manager)
+# ═══════════════════════════════════════════════════════════════
+
+  SGLambdaBatch:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub biblioteca-sg-lambda-batch-${Environment}
+      GroupDescription: Security group da Lambda batch de multas
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub biblioteca-sg-lambda-batch-${Environment}
+
+  SGRDS:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub biblioteca-sg-rds-${Environment}
+      GroupDescription: Security group do RDS MySQL
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref SGLambdaBatch
+          Description: Lambda batch acessa RDS
+      Tags:
+        - Key: Name
+          Value: !Sub biblioteca-sg-rds-${Environment}
+
+  RDSSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: !Sub biblioteca-rds-subnet-group-${Environment}
+      DBSubnetGroupDescription: Subnet group do RDS Biblioteca
+      SubnetIds:
+        - !Ref SubnetPublica
+        - !Ref SubnetPublica2
+        - !Ref SubnetPrivada1
+        - !Ref SubnetPrivada2
+
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
+    Properties:
+      DBInstanceIdentifier: !Sub biblioteca-rds-${Environment}
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: mysql
+      EngineVersion: '8.0'
+      DBName: !Ref DBName
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      AllocatedStorage: '20'
+      StorageType: gp2
+      MultiAZ: false
+      PubliclyAccessible: true
+      DBSubnetGroupName: !Ref RDSSubnetGroup
+      VPCSecurityGroups:
+        - !Ref SGRDS
+      BackupRetentionPeriod: 7
+      DeletionProtection: false
+      Tags:
+        - Key: Project
+          Value: biblioteca
+        - Key: Environment
+          Value: !Ref Environment
+
+  RDSSecret:
+    Type: AWS::SecretsManager::Secret
+    DependsOn: RDSInstance
+    Properties:
+      Name: !Sub biblioteca/rds-credentials-${Environment}
+      Description: Credenciais do RDS Biblioteca
+      SecretString: !Sub |
+        {
+          "host": "${RDSInstance.Endpoint.Address}",
+          "port": "3306",
+          "dbname": "${DBName}",
+          "username": "${DBUsername}",
+          "password": "${DBPassword}"
+        }
+      Tags:
+        - Key: Project
+          Value: biblioteca
+
+# ═══════════════════════════════════════════════════════════════
+# SECAO 4 — MENSAGERIA (SNS + SQS)
+# ═══════════════════════════════════════════════════════════════
+
+  DLQWelcome:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub biblioteca-email-welcome-dlq-${Environment}
+      MessageRetentionPeriod: 1209600
+      Tags:
+        - Key: Project
+          Value: biblioteca
+
+  DLQRecover:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub biblioteca-email-recover-dlq-${Environment}
+      MessageRetentionPeriod: 1209600
+      Tags:
+        - Key: Project
+          Value: biblioteca
+
+  DLQReservation:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub biblioteca-email-reservation-dlq-${Environment}
+      MessageRetentionPeriod: 1209600
+      Tags:
+        - Key: Project
+          Value: biblioteca
+
+  FilaWelcome:
+    Type: AWS::SQS::Queue
+    DependsOn: DLQWelcome
+    Properties:
+      QueueName: !Sub biblioteca-email-welcome-${Environment}
+      VisibilityTimeout: 60
+      MessageRetentionPeriod: 86400
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DLQWelcome.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Project
+          Value: biblioteca
+
+  FilaRecover:
+    Type: AWS::SQS::Queue
+    DependsOn: DLQRecover
+    Properties:
+      QueueName: !Sub biblioteca-email-recover-${Environment}
+      VisibilityTimeout: 60
+      MessageRetentionPeriod: 86400
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DLQRecover.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Project
+          Value: biblioteca
+
+  FilaReservation:
+    Type: AWS::SQS::Queue
+    DependsOn: DLQReservation
+    Properties:
+      QueueName: !Sub biblioteca-email-reservation-${Environment}
+      VisibilityTimeout: 60
+      MessageRetentionPeriod: 86400
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DLQReservation.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Project
+          Value: biblioteca
+
+  TopicUserRegistered:
+    Type: AWS::SNS::Topic
+    DependsOn: FilaWelcome
+    Properties:
+      TopicName: !Sub biblioteca-user-registered-${Environment}
+      Subscription:
+        - Protocol: sqs
+          Endpoint: !GetAtt FilaWelcome.Arn
+
+  TopicPasswordRecover:
+    Type: AWS::SNS::Topic
+    DependsOn: FilaRecover
+    Properties:
+      TopicName: !Sub biblioteca-password-recover-${Environment}
+      Subscription:
+        - Protocol: sqs
+          Endpoint: !GetAtt FilaRecover.Arn
+
+  TopicBookReturned:
+    Type: AWS::SNS::Topic
+    DependsOn: FilaReservation
+    Properties:
+      TopicName: !Sub biblioteca-book-returned-${Environment}
+      Subscription:
+        - Protocol: sqs
+          Endpoint: !GetAtt FilaReservation.Arn
+
+  FilaWelcomePolicy:
+    Type: AWS::SQS::QueuePolicy
+    DependsOn: [FilaWelcome, TopicUserRegistered]
+    Properties:
+      Queues: [!Ref FilaWelcome]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: sns.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt FilaWelcome.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Ref TopicUserRegistered
+
+  FilaRecoverPolicy:
+    Type: AWS::SQS::QueuePolicy
+    DependsOn: [FilaRecover, TopicPasswordRecover]
+    Properties:
+      Queues: [!Ref FilaRecover]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: sns.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt FilaRecover.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Ref TopicPasswordRecover
+
+  FilaReservationPolicy:
+    Type: AWS::SQS::QueuePolicy
+    DependsOn: [FilaReservation, TopicBookReturned]
+    Properties:
+      Queues: [!Ref FilaReservation]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: sns.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt FilaReservation.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Ref TopicBookReturned
+
+# ═══════════════════════════════════════════════════════════════
+# SECAO 5 — LAMBDAS DE EMAIL (Node.js)
+# ═══════════════════════════════════════════════════════════════
+
+  LambdaEmailRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub biblioteca-lambda-email-role-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: biblioteca-lambda-email-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: SQSPermissions
+                Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource:
+                  - !GetAtt FilaWelcome.Arn
+                  - !GetAtt FilaRecover.Arn
+                  - !GetAtt FilaReservation.Arn
+              - Sid: SESPermissions
+                Effect: Allow
+                Action:
+                  - ses:SendEmail
+                  - ses:SendRawEmail
+                Resource: '*'
+              - Sid: CloudWatchPermissions
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+
+  LambdaWelcome:
+    Type: AWS::Lambda::Function
+    DependsOn: LambdaEmailRole
+    Properties:
+      FunctionName: !Sub biblioteca-welcome-email-${Environment}
+      Runtime: nodejs20.x
+      Handler: index.handler
+      Role: !GetAtt LambdaEmailRole.Arn
+      MemorySize: 128
+      Timeout: 30
+      Code:
+        S3Bucket: !Ref DeployBucket
+        S3Key: lambdas/welcome.zip
+      Environment:
+        Variables:
+          SES_FROM_EMAIL: !Ref SesFromEmail
+      Tags:
+        - Key: Project
+          Value: biblioteca
+
+  LambdaWelcomeTrigger:
+    Type: AWS::Lambda::EventSourceMapping
+    DependsOn: LambdaWelcome
+    Properties:
+      EventSourceArn: !GetAtt FilaWelcome.Arn
+      FunctionName: !GetAtt LambdaWelcome.Arn
+      BatchSize: 5
+      Enabled: true
+
+  LambdaRecover:
+    Type: AWS::Lambda::Function
+    DependsOn: LambdaEmailRole
+    Properties:
+      FunctionName: !Sub biblioteca-recover-email-${Environment}
+      Runtime: nodejs20.x
+      Handler: index.handler
+      Role: !GetAtt LambdaEmailRole.Arn
+      MemorySize: 128
+      Timeout: 30
+      Code:
+        S3Bucket: !Ref DeployBucket
+        S3Key: lambdas/recover.zip
+      Environment:
+        Variables:
+          SES_FROM_EMAIL: !Ref SesFromEmail
+      Tags:
+        - Key: Project
+          Value: biblioteca
+
+  LambdaRecoverTrigger:
+    Type: AWS::Lambda::EventSourceMapping
+    DependsOn: LambdaRecover
+    Properties:
+      EventSourceArn: !GetAtt FilaRecover.Arn
+      FunctionName: !GetAtt LambdaRecover.Arn
+      BatchSize: 5
+      Enabled: true
+
+  LambdaReservation:
+    Type: AWS::Lambda::Function
+    DependsOn: LambdaEmailRole
+    Properties:
+      FunctionName: !Sub biblioteca-reservation-email-${Environment}
+      Runtime: nodejs20.x
+      Handler: index.handler
+      Role: !GetAtt LambdaEmailRole.Arn
+      MemorySize: 128
+      Timeout: 30
+      Code:
+        S3Bucket: !Ref DeployBucket
+        S3Key: lambdas/reservation.zip
+      Environment:
+        Variables:
+          SES_FROM_EMAIL: !Ref SesFromEmail
+      Tags:
+        - Key: Project
+          Value: biblioteca
+
+  LambdaReservationTrigger:
+    Type: AWS::Lambda::EventSourceMapping
+    DependsOn: LambdaReservation
+    Properties:
+      EventSourceArn: !GetAtt FilaReservation.Arn
+      FunctionName: !GetAtt LambdaReservation.Arn
+      BatchSize: 5
+      Enabled: true
+
+# ═══════════════════════════════════════════════════════════════
+# SECAO 6 — LAMBDA BATCH DE MULTAS (Node.js + EventBridge)
+# ═══════════════════════════════════════════════════════════════
+
+  LambdaBatchRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub biblioteca-lambda-batch-role-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: biblioteca-lambda-batch-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: SESPermissions
+                Effect: Allow
+                Action:
+                  - ses:SendEmail
+                  - ses:SendRawEmail
+                Resource: '*'
+              - Sid: SecretsManagerPermissions
+                Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref RDSSecret
+              - Sid: CloudWatchPermissions
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+              - Sid: VPCPermissions
+                Effect: Allow
+                Action:
+                  - ec2:CreateNetworkInterface
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DeleteNetworkInterface
+                Resource: '*'
+
+  LambdaFineBatch:
+    Type: AWS::Lambda::Function
+    DependsOn: LambdaBatchRole
+    Properties:
+      FunctionName: !Sub biblioteca-fine-batch-${Environment}
+      Runtime: nodejs20.x
+      Handler: index.handler
+      Role: !GetAtt LambdaBatchRole.Arn
+      MemorySize: 256
+      Timeout: 300
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref SGLambdaBatch
+        SubnetIds:
+          - !Ref SubnetPrivada1
+          - !Ref SubnetPrivada2
+      Code:
+        S3Bucket: !Ref DeployBucket
+        S3Key: lambdas/fine-batch.zip
+      Environment:
+        Variables:
+          DB_SECRET_ARN: !Ref RDSSecret
+          SES_FROM_EMAIL: !Ref SesFromEmail
+          FINE_PER_DAY: !Ref FinePerDay
+      Tags:
+        - Key: Project
+          Value: biblioteca
+
+  EventBridgeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub biblioteca-fine-batch-cron-${Environment}
+      Description: Dispara Lambda de multas a cada 3 minutos
+      ScheduleExpression: rate(3 minutes)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt LambdaFineBatch.Arn
+          Id: LambdaFineBatchTarget
+
+  EventBridgePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaFineBatch.Arn
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt EventBridgeRule.Arn
+
+# ═══════════════════════════════════════════════════════════════
+# SECAO 7 — ELASTIC BEANSTALK (Spring Boot)
+# ═══════════════════════════════════════════════════════════════
+
+  SGBeanstalk:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub biblioteca-sg-beanstalk-${Environment}
+      GroupDescription: Security group do Elastic Beanstalk
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP publico
+        - IpProtocol: tcp
+          FromPort: 5000
+          ToPort: 5000
+          CidrIp: 0.0.0.0/0
+          Description: Spring Boot porta direta
+      Tags:
+        - Key: Name
+          Value: !Sub biblioteca-sg-beanstalk-${Environment}
+
+  RDSIngressFromBeanstalk:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref SGRDS
+      IpProtocol: tcp
+      FromPort: 3306
+      ToPort: 3306
+      SourceSecurityGroupId: !Ref SGBeanstalk
+      Description: Beanstalk acessa RDS
+
+  BeanstalkInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub biblioteca-beanstalk-ec2-role-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSElasticBeanstalkWebTier
+        - arn:aws:iam::aws:policy/AWSElasticBeanstalkWorkerTier
+      Policies:
+        - PolicyName: biblioteca-beanstalk-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: SNSPublish
+                Effect: Allow
+                Action: sns:Publish
+                Resource:
+                  - !Ref TopicUserRegistered
+                  - !Ref TopicPasswordRecover
+                  - !Ref TopicBookReturned
+              - Sid: S3Access
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                Resource: !Sub arn:aws:s3:::${BucketImagens}/*
+              - Sid: SecretsManagerAccess
+                Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref RDSSecret
+              - Sid: CloudWatchLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+
+  BeanstalkInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub biblioteca-beanstalk-instance-profile-${Environment}
+      Roles:
+        - !Ref BeanstalkInstanceRole
+
+  BeanstalkApplication:
+    Type: AWS::ElasticBeanstalk::Application
+    Properties:
+      ApplicationName: !Sub biblioteca-${Environment}
+      Description: Biblioteca Digital API
+
+  BeanstalkAppVersion:
+    Type: AWS::ElasticBeanstalk::ApplicationVersion
+    Properties:
+      ApplicationName: !Ref BeanstalkApplication
+      Description: v1
+      SourceBundle:
+        S3Bucket: !Ref DeployBucket
+        S3Key: !Ref AppS3Key
+
+  BeanstalkEnvironment:
+    Type: AWS::ElasticBeanstalk::Environment
+    DependsOn:
+      - BeanstalkAppVersion
+      - BeanstalkInstanceProfile
+    Properties:
+      EnvironmentName: !Sub biblioteca-env-${Environment}
+      ApplicationName: !Ref BeanstalkApplication
+      VersionLabel: !Ref BeanstalkAppVersion
+      SolutionStackName: "64bit Amazon Linux 2 v3.14.0 running Corretto 17"
+      OptionSettings:
+
+        # ── Tipo de ambiente ─────────────────────────
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: EnvironmentType
+          Value: SingleInstance
+
+        # ── Instancia ────────────────────────────────
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: InstanceType
+          Value: t3.micro
+
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: IamInstanceProfile
+          Value: !Ref BeanstalkInstanceProfile
+
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: SecurityGroups
+          Value: !Ref SGBeanstalk
+
+        # ── Rede ─────────────────────────────────────
+        - Namespace: aws:ec2:vpc
+          OptionName: VPCId
+          Value: !Ref VPC
+
+        - Namespace: aws:ec2:vpc
+          OptionName: Subnets
+          Value: !Ref SubnetPublica
+
+        - Namespace: aws:ec2:vpc
+          OptionName: AssociatePublicIpAddress
+          Value: 'true'
+
+        # ── Logs ─────────────────────────────────────
+        - Namespace: aws:elasticbeanstalk:cloudwatch:logs
+          OptionName: StreamLogs
+          Value: 'true'
+
+        - Namespace: aws:elasticbeanstalk:cloudwatch:logs
+          OptionName: RetentionInDays
+          Value: '7'
+
+        # ── App ───────────────────────────────────────
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: SERVER_PORT
+          Value: '5000'
+
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: APP_PROFILE
+          Value: prod
+
+        # ── RDS via Secrets Manager ───────────────────
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: RDS_SECRET_ARN
+          Value: !Ref RDSSecret
+
+        # ── AWS ───────────────────────────────────────
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: AWS_ACCESS_KEY
+          Value: !Ref AWSAccessKey
+
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: AWS_SECRET_KEY
+          Value: !Ref AWSSecretKey
+
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: AWS_REGION
+          Value: !Ref AWS::Region
+
+        # ── SNS ───────────────────────────────────────
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: SNS_USER_CREATED_ARN
+          Value: !Ref TopicUserRegistered
+
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: SNS_PASSWORD_RECOVERY_ARN
+          Value: !Ref TopicPasswordRecover
+
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: SNS_BOOK_AVAILABLE_ARN
+          Value: !Ref TopicBookReturned
+
+        # ── S3 ────────────────────────────────────────
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: S3_BUCKET_NAME
+          Value: !Ref BucketImagens
+
+        # ── JWT ───────────────────────────────────────
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: JWT_DURATION
+          Value: !Ref JwtDuration
+
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: TOKEN_MINUTES
+          Value: !Ref TokenMinutes
+
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CORS_ORIGINS
+          Value: !Ref CorsOrigins
+
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: RECOVER_URI
+          Value: !Ref RecoverUri
+
+# ═══════════════════════════════════════════════════════════════
+# OUTPUTS
+# ═══════════════════════════════════════════════════════════════
+Outputs:
+
+  BeanstalkURL:
+    Description: URL da aplicacao Spring Boot
+    Value: !Sub http://${BeanstalkEnvironment.EndpointURL}
+
+  RDSEndpoint:
+    Description: Endpoint do RDS (para conectar via mysql client)
+    Value: !GetAtt RDSInstance.Endpoint.Address
+
+  RDSSecretArn:
+    Description: ARN do Secret com credenciais do RDS
+    Value: !Ref RDSSecret
+
+  BucketImagensName:
+    Description: Nome do bucket de imagens
+    Value: !Ref BucketImagens
+
+  TopicUserRegisteredArn:
+    Description: ARN do topico de cadastro de usuario
+    Value: !Ref TopicUserRegistered
+
+  TopicPasswordRecoverArn:
+    Description: ARN do topico de recuperacao de senha
+    Value: !Ref TopicPasswordRecover
+
+  TopicBookReturnedArn:
+    Description: ARN do topico de devolucao de livro
+    Value: !Ref TopicBookReturned
+
+  LambdaWelcomeArn:
+    Description: ARN da Lambda de boas vindas
+    Value: !GetAtt LambdaWelcome.Arn
+
+  LambdaRecoverArn:
+    Description: ARN da Lambda de recuperacao de senha
+    Value: !GetAtt LambdaRecover.Arn
+
+  LambdaReservationArn:
+    Description: ARN da Lambda de reserva
+    Value: !GetAtt LambdaReservation.Arn
+
+  LambdaFineBatchArn:
+    Description: ARN da Lambda batch de multas
+    Value: !GetAtt LambdaFineBatch.Arn
+
+  VPCId:
+    Description: ID da VPC
+    Value: !Ref VPC
+
+  SGBeanstalkId:
+    Description: ID do Security Group do Beanstalk
+    Value: !Ref SGBeanstalk
+
+  SGRDSId:
+    Description: ID do Security Group do RDS (para liberar acesso local)
+    Value: !Ref SGRDS
