@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: |
   Biblioteca Digital - Infraestrutura Completa
   Recursos: VPC, S3, RDS, Secrets Manager, SNS, SQS, Lambdas de email, Lambda batch de multas, Elastic Beanstalk
-  Autor: Pedro Vidigal, Felipe Gabriel, Clovis Dantas, Ewerton Santana, Gustavo Souza
+  Autor: Felipe Gabriel
 
 # ═══════════════════════════════════════════════════════════════
 # PARAMETROS
@@ -35,15 +35,26 @@ Parameters:
     Default: app/library-0.0.1-SNAPSHOT.jar
     Description: Path do JAR da aplicacao no bucket de deploy
 
-  AWSAccessKey:
+  AWSAccessKeyId:
     Type: String
     NoEcho: true
-    Description: AWS Access Key para a aplicacao acessar SNS e S3
+    Description: AWS Access Key ID para a aplicacao acessar SNS e S3
 
-  AWSSecretKey:
+  AWSSecretAccessKey:
     Type: String
     NoEcho: true
-    Description: AWS Secret Key para a aplicacao acessar SNS e S3
+    Description: AWS Secret Access Key para a aplicacao acessar SNS e S3
+
+  ClientId:
+    Type: String
+    Default: myclientid
+    Description: Client ID do OAuth2
+
+  ClientSecret:
+    Type: String
+    NoEcho: true
+    Default: myclientsecret
+    Description: Client Secret do OAuth2
 
   JwtDuration:
     Type: String
@@ -294,6 +305,11 @@ Resources:
           ToPort: 3306
           SourceSecurityGroupId: !Ref SGLambdaBatch
           Description: Lambda batch acessa RDS
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: 0.0.0.0/0
+          Description: Acesso publico para desenvolvimento
       Tags:
         - Key: Name
           Value: !Sub biblioteca-sg-rds-${Environment}
@@ -898,13 +914,14 @@ Resources:
           Value: !Ref RDSSecret
 
         # ── AWS ───────────────────────────────────────
+        # ── AWS Credentials ──────────────────────────
         - Namespace: aws:elasticbeanstalk:application:environment
-          OptionName: AWS_ACCESS_KEY
-          Value: !Ref AWSAccessKey
+          OptionName: AWS_ACCESS_KEY_ID
+          Value: !Ref AWSAccessKeyId
 
         - Namespace: aws:elasticbeanstalk:application:environment
-          OptionName: AWS_SECRET_KEY
-          Value: !Ref AWSSecretKey
+          OptionName: AWS_SECRET_ACCESS_KEY
+          Value: !Ref AWSSecretAccessKey
 
         - Namespace: aws:elasticbeanstalk:application:environment
           OptionName: AWS_REGION
@@ -927,6 +944,15 @@ Resources:
         - Namespace: aws:elasticbeanstalk:application:environment
           OptionName: S3_BUCKET_NAME
           Value: !Ref BucketImagens
+
+        # ── Security ─────────────────────────────────
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CLIENT_ID
+          Value: !Ref ClientId
+
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CLIENT_SECRET
+          Value: !Ref ClientSecret
 
         # ── JWT ───────────────────────────────────────
         - Namespace: aws:elasticbeanstalk:application:environment
