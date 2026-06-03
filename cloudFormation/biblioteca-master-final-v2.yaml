@@ -180,6 +180,7 @@ Resources:
 
   NatGateway:
     Type: AWS::EC2::NatGateway
+    DependsOn: InternetGatewayAttachment
     Properties:
       AllocationId: !GetAtt ElasticIP.AllocationId
       SubnetId: !Ref SubnetPublica
@@ -258,7 +259,7 @@ Resources:
       CorsConfiguration:
         CorsRules:
           - AllowedHeaders: ['*']
-            AllowedMethods: [GET]
+            AllowedMethods: [GET, PUT, POST, DELETE]
             AllowedOrigins: ['*']
             MaxAge: 3600
       Tags:
@@ -328,6 +329,7 @@ Resources:
   RDSInstance:
     Type: AWS::RDS::DBInstance
     DeletionPolicy: Delete
+    DependsOn: InternetGatewayAttachment
     Properties:
       DBInstanceIdentifier: !Sub biblioteca-rds-${Environment}
       DBInstanceClass: !Ref DBInstanceClass
@@ -852,6 +854,7 @@ Resources:
     DependsOn:
       - BeanstalkAppVersion
       - BeanstalkInstanceProfile
+      - InternetGatewayAttachment
     Properties:
       EnvironmentName: !Sub biblioteca-env-${Environment}
       ApplicationName: !Ref BeanstalkApplication
