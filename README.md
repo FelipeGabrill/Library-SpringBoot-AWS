@@ -14,7 +14,7 @@ The system handles book borrowing, reservations, overdue fines, and automated em
 
 ## Infrastructure as Code
 
-The entire infrastructure is provisioned using a single **AWS CloudFormation** template (`cloudformation/biblioteca-master-final.yaml`), following Infrastructure as Code (IaC) principles.
+The entire infrastructure is provisioned using a single **AWS CloudFormation** template (`cloudformation/biblioteca-master-final-v2.yaml`), following Infrastructure as Code (IaC) principles.
 
 This means the full environment — VPC, subnets, RDS, S3, SNS, SQS, Lambdas, EventBridge, Secrets Manager and Elastic Beanstalk — can be created or destroyed with a single stack deployment. There are no manual steps required to provision infrastructure.
 
@@ -111,6 +111,16 @@ Receives application logs streamed from Elastic Beanstalk (`StreamLogs: true`). 
 - Lombok
 - AWS SDK v2 (SNS, S3, Secrets Manager)
 
+**API Documentation**
+- SpringDoc OpenAPI (springdoc-openapi-starter-webmvc-ui 2.6.0)
+- Swagger UI — interactive API documentation with Bearer JWT authentication
+- OpenAPI 3.0 specification with `@Schema`, `@Operation`, `@ApiResponses` annotations
+
+**Testing**
+- JUnit 5 (Jupiter)
+- Mockito — unit testing with mocks for all service layers
+- Spring Test — `MockMultipartFile`, `ReflectionTestUtils`, `SecurityContextHolder`
+
 **AWS**
 - Elastic Beanstalk (PaaS)
 - RDS MySQL 8.0 (PaaS)
@@ -131,42 +141,77 @@ Receives application logs streamed from Elastic Beanstalk (`StreamLogs: true`). 
 ```
 backend/
 └── library/
-    └── src/main/java/com/library/
-        ├── config/
-        │   ├── AuthorizationServerConfig.java   # OAuth2 server + JWT
-        │   ├── ResourceServerConfig.java        # Security filter chains + CORS
-        │   ├── aws/
-        │   │   ├── DataSourceConfig.java        # Reads RDS credentials from Secrets Manager
-        │   │   ├── S3Config.java
-        │   │   └── SnsConfig.java
-        │   └── customgrant/                     # Custom OAuth2 password grant type
-        ├── controllers/                         # REST controllers + exception handler
-        ├── dtos/                                # Request and response DTOs
-        │   ├── auth/
-        │   ├── book/
-        │   ├── category/
-        │   ├── loan/
-        │   ├── reservation/
-        │   └── user/
-        ├── models/
-        │   ├── entities/                        # JPA entities + enums
-        │   └── repositories/                    # Spring Data repositories
-        ├── publisher/                           # SNS event publishers
-        ├── projections/                         # Spring Data projections
-        └── services/
-            ├── aws/                             # S3Service, AwsSecretsService
-            ├── exceptions/                      # Custom exceptions
-            ├── impl/                            # Service implementations
-            └── validation/                      # Custom Bean Validation annotations
+    └── src/
+        ├── main/java/com/library/
+        │   ├── config/
+        │   │   ├── AuthorizationServerConfig.java
+        │   │   ├── ResourceServerConfig.java
+        │   │   ├── aws/
+        │   │   │   ├── DataSourceConfig.java
+        │   │   │   ├── S3Config.java
+        │   │   │   └── SnsConfig.java
+        │   │   ├── customgrant/
+        │   │   └── swagger/
+        │   │       └── OpenApiConfig.java
+        │   ├── controllers/                     # Interfaces with Swagger annotations
+        │   │   ├── IAuthController.java
+        │   │   ├── IBookController.java
+        │   │   ├── ICategoryController.java
+        │   │   ├── ILoanController.java
+        │   │   ├── IReservationController.java
+        │   │   ├── IUserController.java
+        │   │   ├── exception/
+        │   │   └── impl/                        # Controller implementations (clean)
+        │   │       ├── AuthControllerImpl.java
+        │   │       ├── BookControllerImpl.java
+        │   │       ├── CategoryControllerImpl.java
+        │   │       ├── LoanControllerImpl.java
+        │   │       ├── ReservationControllerImpl.java
+        │   │       └── UserControllerImpl.java
+        │   ├── dtos/                            # DTOs with @Schema annotations
+        │   │   ├── auth/
+        │   │   ├── book/
+        │   │   ├── category/
+        │   │   ├── loan/
+        │   │   ├── reservation/
+        │   │   └── user/
+        │   ├── models/
+        │   │   ├── entities/
+        │   │   └── repositories/
+        │   ├── publisher/
+        │   ├── projections/
+        │   └── services/
+        │       ├── aws/
+        │       ├── exceptions/
+        │       ├── impl/
+        │       └── validation/
+        └── test/java/com/library/
+            ├── factories/                       # Test factories (pattern)
+            │   ├── BookFactory.java
+            │   ├── CategoryFactory.java
+            │   ├── LoanFactory.java
+            │   ├── ReservationFactory.java
+            │   └── UserFactory.java
+            └── services/                        # Unit tests (JUnit 5 + Mockito)
+                ├── impl/
+                │   ├── AuthServiceImplTest.java
+                │   ├── BookServiceImplTest.java
+                │   ├── CategoryServiceImplTest.java
+                │   ├── LoanServiceImplTest.java
+                │   ├── ReservationServiceImplTest.java
+                │   └── UserServiceImplTest.java
+                └── aws/
+                    ├── S3ServiceTest.java
+                    └── AwsSecretsServiceTest.java
 
 lambdas/
-├── welcome/        # Sends welcome email on user registration
-├── recover/        # Sends password recovery email
-├── reservation/    # Notifies user when reserved book becomes available
-└── fine-batch/     # Calculates overdue fines and notifies borrowers (daily)
+├── welcome/
+├── recover/
+├── reservation/
+└── fine-batch/
 
 cloudformation/
-└── biblioteca-master-final.yaml   # Full infrastructure as a single stack
+└── biblioteca-master-final-v2.yaml
 
 drawio/
 ├── Library-AWSArchitecture.drawio
@@ -175,6 +220,51 @@ drawio/
 postman/
 ├── Biblioteca_API_postman_collection.json
 └── Biblioteca_API_environment.json
+```
+
+---
+
+## API Documentation (Swagger)
+
+The API is fully documented using **SpringDoc OpenAPI 3.0** with an interactive Swagger UI.
+
+**Access:**
+```
+Swagger UI:    http://localhost:8080/swagger-ui.html
+OpenAPI JSON:  http://localhost:8080/v3/api-docs
+```
+
+**Architecture pattern:** controller interfaces (`IAuthController`, `IBookController`, etc.) hold all Swagger annotations (`@Tag`, `@Operation`, `@ApiResponses`, `@SecurityRequirement`, `@Parameter`), while the implementations (`AuthControllerImpl`, `BookControllerImpl`, etc.) contain only the business logic — keeping the code clean and the documentation separated.
+
+**Authentication in Swagger UI:**
+1. Obtain a token via `POST /oauth2/token` (use Postman or curl with Basic Auth)
+2. Click the **Authorize** button in Swagger UI
+3. Paste the `access_token` value
+4. All protected endpoints will include the `Authorization: Bearer ...` header automatically
+
+---
+
+## Testing
+
+The project includes a comprehensive unit test suite covering all service layers.
+
+**Structure:** follows the DSCommerce pattern with factory classes for entity creation and `@BeforeEach` setup.
+
+| Test Class | Tests | Coverage |
+|---|---|---|
+| `CategoryServiceImplTest` | 11 | All CRUD operations + duplicate name + FK violation |
+| `BookServiceImplTest` | 21 | CRUD + ISBN validation + media upload/replace + year validation |
+| `LoanServiceImplTest` | 20 | Register + return + overdue processing + business rules (max loans, duplicate, availability) |
+| `ReservationServiceImplTest` | 11 | Create + cancel + notification + business rules (available book, duplicate) |
+| `AuthServiceImplTest` | 7 | Token creation + password reset + token validation + expiration |
+| `UserServiceImplTest` | 18 | CRUD + JWT authentication + profile picture upload/replace + loadUserByUsername |
+| `S3ServiceTest` | 8 | Upload + delete + file type/size validation |
+| `AwsSecretsServiceTest` | 3 | Secret retrieval + not found + invalid JSON |
+
+**Run tests:**
+```bash
+cd backend/library
+mvn test
 ```
 
 ---
@@ -227,11 +317,14 @@ Reservation: ACTIVE ──── NOTIFIED
 | Password recovery token expiration | 30 minutes (configurable) |
 | Reservation only allowed when | `availableCopies = 0` |
 | On book return | notifies all users with `ACTIVE` reservations via SNS |
+
 ---
 
 ## API Endpoints
 
 Base URL: `https://library-env.us-east-1.elasticbeanstalk.com`
+
+Interactive documentation: `/swagger-ui.html`
 
 ### Authentication
 | Method | Endpoint | Auth | Description |
@@ -257,6 +350,7 @@ Base URL: `https://library-env.us-east-1.elasticbeanstalk.com`
 |---|---|---|---|
 | GET | `/categories` | Public | List all categories |
 | GET | `/categories/{id}` | Public | Get category by ID |
+| GET | `/categories/search/{name}` | Public | Search categories by name |
 | POST | `/categories` | Admin | Create category |
 | PUT | `/categories/{id}` | Admin | Update category |
 | DELETE | `/categories/{id}` | Admin | Delete category |
@@ -276,9 +370,9 @@ Base URL: `https://library-env.us-east-1.elasticbeanstalk.com`
 ### Loans
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
-| GET | `/loans` | Admin | List all loans |
 | GET | `/loans/{id}` | Admin | Get loan by ID |
 | GET | `/loans/user/{userId}` | Admin | Get loans by user |
+| GET | `/loans/user/{userId}/status/{status}` | Admin | Get loans by user and status |
 | GET | `/loans/status/{status}` | Admin | Filter loans by status |
 | GET | `/loans/overdue` | Admin | List overdue loans |
 | GET | `/loans/count/status/{status}` | Admin | Count loans by status |
@@ -400,7 +494,7 @@ aws s3 cp fine-batch.zip s3://biblioteca-deploy-{ACCOUNT_ID}/lambdas/fine-batch.
 
 ```
 AWS Console → CloudFormation → Create stack
-  → Upload: cloudformation/biblioteca-master-final.yaml
+  → Upload: cloudformation/biblioteca-master-final-v2.yaml
   → Stack name: biblioteca-master-test
 ```
 
@@ -419,26 +513,19 @@ The stack takes ~10 minutes to create. RDS provisioning is the bottleneck.
 
 ### 4. Seed the database
 
-Get the RDS endpoint from the stack Outputs, add your IP to the RDS Security Group inbound rules and connect:
+The application automatically seeds the database on startup using `import.sql` with `MERGE INTO` statements (compatible with both H2 and MySQL). The seed creates the default roles (`ROLE_ADMIN`, `ROLE_USER`) and an admin user.
+
+To verify manually, get the RDS endpoint from the stack Outputs, add your IP to the RDS Security Group inbound rules and connect:
 
 ```bash
 mysql -h YOUR_RDS_ENDPOINT -P 3306 -u admin -p biblioteca
 ```
 
-```sql
-INSERT INTO tb_role (authority) VALUES ('ROLE_ADMIN'), ('ROLE_USER');
-
-INSERT INTO tb_user (name, email, password)
-VALUES ('Admin', 'admin@biblioteca.com', '$2a$10$...');
-
-INSERT INTO tb_user_role (user_id, role_id)
-SELECT u.id, r.id FROM tb_user u, tb_role r
-WHERE u.email = 'admin@biblioteca.com' AND r.authority = 'ROLE_ADMIN';
-```
-
 ### 5. Test the API
 
 Get the `BeanstalkURL` from the stack Outputs and import the Postman files from the `postman/` folder. Select the `Biblioteca API - Local` environment, run **Login** and the token is saved automatically.
+
+Alternatively, access the **Swagger UI** at `{BeanstalkURL}/swagger-ui.html` for interactive documentation.
 
 ---
 
